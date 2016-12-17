@@ -4,6 +4,8 @@
  * check that a cast fails with incompatible type
  */
 
+#include "../unused.hpp"
+
 int main()
 {
 	using T1 = radix_iterator<int*>;
@@ -11,4 +13,5 @@ int main()
 
 	T1 x;
 	T2 y{T2(x)}; // error
+	unused(y);
 }

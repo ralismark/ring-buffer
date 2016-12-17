@@ -1,5 +1,7 @@
 #include "include/radix_iterator.hpp"
 
+#include "../unused.hpp"
+
 /*
  * testing const-correctness
  * only compile check needed
@@ -26,6 +28,8 @@ int main()
 		x.get();
 
 		C2 y{x};
-		[[maybe_unused]] bool a = x == y && x != x;
+
+		bool a = x == y && x != x;
+		unused(a);
 	}
 }
