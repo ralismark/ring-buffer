@@ -18,10 +18,7 @@ private: // internal statics
 
 	// constepr bool wrapper
 	template <bool val>
-	struct cte_bool
-	{
-		static constexpr bool value = val;
-	};
+	using cte_bool = integral_constant<bool, val>;
 
 	using atraits = typename std::allocator_traits<Allocator>;
 
