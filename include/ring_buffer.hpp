@@ -358,6 +358,39 @@ private: // internal methods
 		}
 	}
 
+	iterator make_space_at(const_iterator pos, size_type count)
+	{
+		// change begin instead of end
+		// a bit of an optimisation, reduces the number of moves required
+		bool expand_forward = std::distance(this->cbegin(), pos) < std::distance(pos, this->cend());
+
+		auto buf_start_idx = this->idx_of(this->it_offset(pos));
+		this->ensure_alloc_copy_extra(this->size() + count);
+
+		if(expand_forward) { // change front
+			auto old_begin = this->begin();
+			m_begin = this->it_offset(std::prev(this->end(), static_cast<difference_type>(count)));
+			for(auto from = old_begin, to = this->begin(); from != pos; ++from, ++to) {
+				atraits::construct(mm, to.get(), std::move(*from));
+				atraits::destroy(mm, from.get());
+			}
+		} else { // change back
+			auto old_end = this->rbegin();
+			auto end_pos = const_reverse_iterator(std::prev(pos));
+
+			m_end = this->it_offset(std::next(this->end(), static_cast<difference_type>(count)));
+			auto new_end = this->rbegin();
+
+			for(auto from = old_end, to = new_end; from != end_pos; ++from, ++to) {
+				atraits::construct(mm, to.base().get(), std::move(*from));
+				atraits::destroy(mm, from.base().get());
+			}
+		}
+
+		// start of uninitalised block
+		return this->it_of(buf_start_idx);
+	}
+
 	// interface, based on type of iterator
 	// use tag dispatch
 	template <typename InputIt>
@@ -391,42 +424,15 @@ private: // internal methods
 	template <typename InputIt>
 	iterator it_insert(const_iterator pos, InputIt first, InputIt last, size_type count)
 	{
-		// change begin instead of end
-		// a bit of an optimisation, reduces the number of moves required
-		bool expand_forward = std::distance(this->cbegin(), pos) < std::distance(pos, this->cend());
+		auto begin_uninit_blk = this->idx_of(this->make_space_at(pos, count));
 
-		auto buf_start = this->idx_of(this->it_offset(pos));
-		this->ensure_alloc_copy_extra(this->size() + count);
-
-		if(expand_forward) { // change front
-			auto old_begin = this->begin();
-			m_begin = this->it_offset(std::prev(this->end(), count));
-			for(auto from = old_begin, to = this->begin(); from != pos; ++from, ++to) {
-				atraits::construct(mm, to.get(), std::move(*from));
-				atraits::destroy(mm, from.get());
-			}
-		} else { // change back
-			auto old_end = this->rbegin();
-			auto end_pos = const_reverse_iterator(std::prev(pos));
-
-			m_end = this->it_offset(std::next(this->end(), count));
-			auto new_end = this->rbegin();
-
-			for(auto from = old_end, to = new_end; from != end_pos; ++from, ++to) {
-				atraits::construct(mm, to.base().get(), std::move(*from));
-				atraits::destroy(mm, from.base().get());
-			}
-		}
-
-		// init values
 		size_type num = 0;
-		auto first_elem = std::next(this->begin(), buf_start);
-		for(auto it = first_elem;
+		for(auto it = begin_uninit_blk;
 		    first != last && num < count;
 		    ++first, ++it, ++num) {
 			this->ctor_value(this->it_offset(it), *first);
 		}
-		return first_elem;
+		return begin_uninit_blk;
 	}
 
 	// }}}
