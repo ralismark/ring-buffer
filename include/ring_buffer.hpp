@@ -9,6 +9,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "radix_iterator.hpp"
+
 template <typename T, typename Allocator = std::allocator<T>>
 class ring_buffer
 {
@@ -32,15 +34,6 @@ private: // internal statics
 	using pocma = cte_bool<atraits::propagate_on_container_move_assignment::value>;
 	using pocs  = cte_bool<atraits::propagate_on_container_swap::value>;
 
-	// TODO(timmy): Add functionality for random access
-	//
-	//              This would require bound checks, since we need to know what
-	//              locations are valid (so we know to move forward or back
-	//              to a certain position)
-
-	template <typename U>
-	class radix_iterator;
-
 public: // statics
 
 	// {{{ member types
@@ -57,10 +50,10 @@ public: // statics
 	using pointer                = typename atraits::pointer;
 	using const_pointer          = typename atraits::const_pointer;
 
-	using iterator               = radix_iterator<value_type>;
+	using iterator               = radix_iterator<pointer>;
 	using reverse_iterator       = std::reverse_iterator<iterator>;
 
-	using const_iterator         = radix_iterator<const value_type>;
+	using const_iterator         = radix_iterator<const_pointer>;
 	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
 	// }}}
