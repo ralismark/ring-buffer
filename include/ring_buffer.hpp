@@ -60,6 +60,16 @@ public: // statics
 
 private: // internal statics
 
+	// helper for insertion overloads (eg.g. assign)
+	// to distinguish between iterator pairs and a value + count pair
+	template <typename InputIt>
+	using int_if_input_it = typename std::enable_if<
+			std::is_base_of<
+				std::input_iterator_tag,
+				typename std::iterator_traits<InputIt>::iterator_category
+			>::value,
+		int>::type;
+
 	// expansion rate
 	// 1.5 is more optimal than 2,
 	// best would be psi (golden ratio) ~= 1.68, but 1.5 is close enough
@@ -467,7 +477,7 @@ public: // methods
 	}
 
 	// from range
-	template <typename InputIt>
+	template <typename InputIt, int_if_input_it<InputIt> = 0> // disambiguiation
 	ring_buffer(InputIt first, InputIt last, const allocator_type& alloc = allocator_type())
 		: ring_buffer(alloc)
 	{
@@ -563,7 +573,7 @@ public: // methods
 	}
 
 	// invalidates: all
-	template <typename InputIt>
+	template <typename InputIt, int_if_input_it<InputIt> = 0>
 	void assign(InputIt first, InputIt last)
 	{
 		this->dtor_value_all();
@@ -829,7 +839,7 @@ public: // methods
 	// invalidates: all (if capacity changes or side closer to pos != side closer to ret)
 	//              before pos (if pos closer to front)
 	//              pos + after pos (if pos closed to end)
-	template <typename InputIt>
+	template <typename InputIt, int_if_input_it<InputIt> = 0> // diambiguate
 	iterator insert(const_iterator pos, InputIt first, InputIt last)
 	{
 		return this->it_insert(pos, first, last);
