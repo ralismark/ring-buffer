@@ -435,7 +435,7 @@ private: // internal methods
 	template <typename InputIt>
 	iterator it_insert(const_iterator pos, InputIt first, InputIt last, size_type count)
 	{
-		auto begin_uninit_blk = this->idx_of(this->make_space_at(pos, count));
+		auto begin_uninit_blk = this->make_space_at(pos, count);
 
 		size_type num = 0;
 		for(auto it = begin_uninit_blk;
