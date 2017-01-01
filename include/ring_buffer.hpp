@@ -9,6 +9,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "radix_iterator.hpp"
+
 template <typename T, typename Allocator = std::allocator<T>>
 class ring_buffer
 {
@@ -16,10 +18,7 @@ private: // internal statics
 
 	// constepr bool wrapper
 	template <bool val>
-	struct cte_bool
-	{
-		static constexpr bool value = val;
-	};
+	using cte_bool = integral_constant<bool, val>;
 
 	using atraits = typename std::allocator_traits<Allocator>;
 
@@ -31,15 +30,6 @@ private: // internal statics
 	using pocca = cte_bool<atraits::propagate_on_container_copy_assignment::value>;
 	using pocma = cte_bool<atraits::propagate_on_container_move_assignment::value>;
 	using pocs  = cte_bool<atraits::propagate_on_container_swap::value>;
-
-	// TODO(timmy): Add functionality for random access
-	//
-	//              This would require bound checks, since we need to know what
-	//              locations are valid (so we know to move forward or back
-	//              to a certain position)
-
-	template <typename U>
-	class radix_iterator;
 
 public: // statics
 
@@ -57,15 +47,25 @@ public: // statics
 	using pointer                = typename atraits::pointer;
 	using const_pointer          = typename atraits::const_pointer;
 
-	using iterator               = radix_iterator<value_type>;
+	using iterator               = radix_iterator<pointer>;
 	using reverse_iterator       = std::reverse_iterator<iterator>;
 
-	using const_iterator         = radix_iterator<const value_type>;
+	using const_iterator         = radix_iterator<const_pointer>;
 	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
 	// }}}
 
 private: // internal statics
+
+	// helper for insertion overloads (eg.g. assign)
+	// to distinguish between iterator pairs and a value + count pair
+	template <typename InputIt>
+	using int_if_input_it = typename std::enable_if<
+			std::is_base_of<
+				std::input_iterator_tag,
+				typename std::iterator_traits<InputIt>::iterator_category
+			>::value,
+		int>::type;
 
 	// expansion rate
 	// 1.5 is more optimal than 2,
@@ -76,7 +76,8 @@ private: // internal statics
 	// wraps val to [0, wrap)
 	static size_type pwrap(difference_type val, size_type wrap)
 	{
-		return ((val % wrap) + wrap) % wrap;
+		difference_type wrap_s = static_cast<difference_type>(wrap);
+		return size_type((val % wrap_s) + wrap_s) % wrap;
 	}
 
 	// defined at bottom, resolves dependency on interface
@@ -132,7 +133,6 @@ private: // internal methods
 	// {{{ internal methods
 
 	// create a mb_dtor object
-	constexpr
 	mb_dtor make_mb_dtor()
 		noexcept
 	{
@@ -271,7 +271,7 @@ private: // internal methods
 			    own_it != this->end() && new_it != new_blk.end();
 			    ++own_it, ++new_it) {
 				// init from old
-				new_blk.ctor_value(new_it.get() - new_blk.memblk.get(), std::move_if_noexcept(*own_it));
+				new_blk.ctor_value(new_blk.it_offset(new_it), std::move_if_noexcept(*own_it));
 			}
 
 			this->swap(new_blk);
@@ -284,7 +284,7 @@ private: // internal methods
 		if(count > this->capacity()) {
 			// see above (ensure_alloc_blanked_extra) for explanation
 			// on the lack of rounding
-			new_size = mb_size * expansion_ratio;
+			new_size = static_cast<size_type>(mb_size * expansion_ratio);
 			if(count > new_size) {
 				new_size = count;
 			}
@@ -292,10 +292,15 @@ private: // internal methods
 		this->ensure_alloc_copy(new_size);
 	}
 
+	idx_offset idx_of(abs_offset_rel off) const
+	{
+		auto idx = off - abs_offset_rel(m_begin);
+		return pwrap(idx, mb_size);
+	}
+
 	idx_offset idx_of(abs_offset off) const
 	{
-		auto idx = off - m_begin;
-		return pwrap(idx, mb_size);
+		return this->idx_of(abs_offset_rel(off));
 	}
 
 	// offset of an element
@@ -304,10 +309,20 @@ private: // internal methods
 		return this->abs_offset_of(idx + m_begin);
 	}
 
+	abs_offset offset_of(idx_offset idx) const
+	{
+		return this->abs_offset_of(idx + m_begin);
+	}
+
 	// absolute offset, just wrap
 	abs_offset abs_offset_of(abs_offset_rel idx) const
 	{
 		return pwrap(idx, mb_size);
+	}
+
+	abs_offset abs_offset_of(abs_offset idx) const
+	{
+		return idx % mb_size;
 	}
 
 	template <typename U>
@@ -358,6 +373,39 @@ private: // internal methods
 		}
 	}
 
+	iterator make_space_at(const_iterator pos, size_type count)
+	{
+		// change begin instead of end
+		// a bit of an optimisation, reduces the number of moves required
+		bool expand_forward = std::distance(this->cbegin(), pos) < std::distance(pos, this->cend());
+
+		auto buf_start_idx = this->idx_of(this->it_offset(pos));
+		this->ensure_alloc_copy_extra(this->size() + count);
+
+		if(expand_forward) { // change front
+			auto old_begin = this->begin();
+			m_begin = this->it_offset(std::prev(this->end(), static_cast<difference_type>(count)));
+			for(auto from = old_begin, to = this->begin(); from != pos; ++from, ++to) {
+				atraits::construct(mm, to.get(), std::move(*from));
+				atraits::destroy(mm, from.get());
+			}
+		} else { // change back
+			auto old_end = this->rbegin();
+			auto end_pos = const_reverse_iterator(std::prev(pos));
+
+			m_end = this->it_offset(std::next(this->end(), static_cast<difference_type>(count)));
+			auto new_end = this->rbegin();
+
+			for(auto from = old_end, to = new_end; from != end_pos; ++from, ++to) {
+				atraits::construct(mm, to.base().get(), std::move(*from));
+				atraits::destroy(mm, from.base().get());
+			}
+		}
+
+		// start of uninitalised block
+		return this->it_of(buf_start_idx);
+	}
+
 	// interface, based on type of iterator
 	// use tag dispatch
 	template <typename InputIt>
@@ -372,7 +420,7 @@ private: // internal methods
 	template <typename InputIt>
 	iterator it_insert(const_iterator pos, InputIt first, InputIt last, cte_bool<true> /* is_fwd_it */)
 	{
-		return this->it_insert(pos, first, last, std::distance(first, last));
+		return this->it_insert(pos, first, last, static_cast<size_type>(std::distance(first, last)));
 	}
 
 	template <typename InputIt>
@@ -391,42 +439,15 @@ private: // internal methods
 	template <typename InputIt>
 	iterator it_insert(const_iterator pos, InputIt first, InputIt last, size_type count)
 	{
-		// change begin instead of end
-		// a bit of an optimisation, reduces the number of moves required
-		bool expand_forward = std::distance(this->cbegin(), pos) < std::distance(pos, this->cend());
+		auto begin_uninit_blk = this->idx_of(this->make_space_at(pos, count));
 
-		auto buf_start = this->idx_of(this->it_offset(pos));
-		this->ensure_alloc_copy_extra(this->size() + count);
-
-		if(expand_forward) { // change front
-			auto old_begin = this->begin();
-			m_begin = this->it_offset(std::prev(this->end(), count));
-			for(auto from = old_begin, to = this->begin(); from != pos; ++from, ++to) {
-				atraits::construct(mm, to.get(), std::move(*from));
-				atraits::destroy(mm, from.get());
-			}
-		} else { // change back
-			auto old_end = this->rbegin();
-			auto end_pos = const_reverse_iterator(std::prev(pos));
-
-			m_end = this->it_offset(std::next(this->end(), count));
-			auto new_end = this->rbegin();
-
-			for(auto from = old_end, to = new_end; from != end_pos; ++from, ++to) {
-				atraits::construct(mm, to.base().get(), std::move(*from));
-				atraits::destroy(mm, from.base().get());
-			}
-		}
-
-		// init values
 		size_type num = 0;
-		auto first_elem = std::next(this->begin(), buf_start);
-		for(auto it = first_elem;
+		for(auto it = begin_uninit_blk;
 		    first != last && num < count;
 		    ++first, ++it, ++num) {
 			this->ctor_value(this->it_offset(it), *first);
 		}
-		return first_elem;
+		return begin_uninit_blk;
 	}
 
 	// }}}
@@ -474,7 +495,7 @@ public: // methods
 	}
 
 	// from range
-	template <typename InputIt>
+	template <typename InputIt, int_if_input_it<InputIt> = 0> // disambiguiation
 	ring_buffer(InputIt first, InputIt last, const allocator_type& alloc = allocator_type())
 		: ring_buffer(alloc)
 	{
@@ -570,7 +591,7 @@ public: // methods
 	}
 
 	// invalidates: all
-	template <typename InputIt>
+	template <typename InputIt, int_if_input_it<InputIt> = 0>
 	void assign(InputIt first, InputIt last)
 	{
 		this->dtor_value_all();
@@ -804,7 +825,7 @@ public: // methods
 
 	// invalidates: all (if capacity changes)
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
+	//              pos + after pos (if pos closer to end)
 	iterator insert(const_iterator pos, const value_type& value)
 	{
 		// hacky pointer arith
@@ -814,7 +835,7 @@ public: // methods
 
 	// invalidates: all (if capacity changes)
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
+	//              pos + after pos (if pos closer to end)
 	iterator insert(const_iterator pos, value_type&& value)
 	{
 		return this->it_insert(pos,
@@ -835,8 +856,8 @@ public: // methods
 
 	// invalidates: all (if capacity changes or side closer to pos != side closer to ret)
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
-	template <typename InputIt>
+	//              pos + after pos (if pos closer to end)
+	template <typename InputIt, int_if_input_it<InputIt> = 0> // diambiguate
 	iterator insert(const_iterator pos, InputIt first, InputIt last)
 	{
 		return this->it_insert(pos, first, last);
@@ -844,7 +865,7 @@ public: // methods
 
 	// invalidates: all (if capacity changes or side closer to pos != side closer to next(ret))
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
+	//              pos + after pos (if pos closer to end)
 	iterator insert(const_iterator pos, std::initializer_list<value_type> il)
 	{
 		return this->it_insert(pos, il.begin(), il.end(), il.size());
