@@ -810,7 +810,7 @@ public: // methods
 
 	// invalidates: all (if capacity changes)
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
+	//              pos + after pos (if pos closer to end)
 	iterator insert(const_iterator pos, const value_type& value)
 	{
 		// hacky pointer arith
@@ -820,7 +820,7 @@ public: // methods
 
 	// invalidates: all (if capacity changes)
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
+	//              pos + after pos (if pos closer to end)
 	iterator insert(const_iterator pos, value_type&& value)
 	{
 		return this->it_insert(pos,
@@ -841,7 +841,7 @@ public: // methods
 
 	// invalidates: all (if capacity changes or side closer to pos != side closer to ret)
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
+	//              pos + after pos (if pos closer to end)
 	template <typename InputIt, int_if_input_it<InputIt> = 0> // diambiguate
 	iterator insert(const_iterator pos, InputIt first, InputIt last)
 	{
@@ -850,7 +850,7 @@ public: // methods
 
 	// invalidates: all (if capacity changes or side closer to pos != side closer to next(ret))
 	//              before pos (if pos closer to front)
-	//              pos + after pos (if pos closed to end)
+	//              pos + after pos (if pos closer to end)
 	iterator insert(const_iterator pos, std::initializer_list<value_type> il)
 	{
 		return this->it_insert(pos, il.begin(), il.end(), il.size());
