@@ -133,7 +133,6 @@ private: // internal methods
 	// {{{ internal methods
 
 	// create a mb_dtor object
-	constexpr
 	mb_dtor make_mb_dtor()
 		noexcept
 	{
