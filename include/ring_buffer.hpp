@@ -76,7 +76,8 @@ private: // internal statics
 	// wraps val to [0, wrap)
 	static size_type pwrap(difference_type val, size_type wrap)
 	{
-		return ((val % wrap) + wrap) % wrap;
+		difference_type wrap_s = static_cast<difference_type>(wrap);
+		return size_type((val % wrap_s) + wrap_s) % wrap;
 	}
 
 	// defined at bottom, resolves dependency on interface
@@ -271,7 +272,7 @@ private: // internal methods
 			    own_it != this->end() && new_it != new_blk.end();
 			    ++own_it, ++new_it) {
 				// init from old
-				new_blk.ctor_value(new_it.get() - new_blk.memblk.get(), std::move_if_noexcept(*own_it));
+				new_blk.ctor_value(new_blk.it_offset(new_it), std::move_if_noexcept(*own_it));
 			}
 
 			this->swap(new_blk);
@@ -284,7 +285,7 @@ private: // internal methods
 		if(count > this->capacity()) {
 			// see above (ensure_alloc_blanked_extra) for explanation
 			// on the lack of rounding
-			new_size = mb_size * expansion_ratio;
+			new_size = static_cast<size_type>(mb_size * expansion_ratio);
 			if(count > new_size) {
 				new_size = count;
 			}
@@ -292,10 +293,15 @@ private: // internal methods
 		this->ensure_alloc_copy(new_size);
 	}
 
+	idx_offset idx_of(abs_offset_rel off) const
+	{
+		auto idx = off - abs_offset_rel(m_begin);
+		return pwrap(idx, mb_size);
+	}
+
 	idx_offset idx_of(abs_offset off) const
 	{
-		auto idx = off - m_begin;
-		return pwrap(idx, mb_size);
+		return this->idx_of(abs_offset_rel(off));
 	}
 
 	// offset of an element
@@ -304,10 +310,20 @@ private: // internal methods
 		return this->abs_offset_of(idx + m_begin);
 	}
 
+	abs_offset offset_of(idx_offset idx) const
+	{
+		return this->abs_offset_of(idx + m_begin);
+	}
+
 	// absolute offset, just wrap
 	abs_offset abs_offset_of(abs_offset_rel idx) const
 	{
 		return pwrap(idx, mb_size);
+	}
+
+	abs_offset abs_offset_of(abs_offset idx) const
+	{
+		return idx % mb_size;
 	}
 
 	template <typename U>
@@ -405,7 +421,7 @@ private: // internal methods
 	template <typename InputIt>
 	iterator it_insert(const_iterator pos, InputIt first, InputIt last, cte_bool<true> /* is_fwd_it */)
 	{
-		return this->it_insert(pos, first, last, std::distance(first, last));
+		return this->it_insert(pos, first, last, static_cast<size_type>(std::distance(first, last)));
 	}
 
 	template <typename InputIt>
