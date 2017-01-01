@@ -16,10 +16,6 @@ class ring_buffer
 {
 private: // internal statics
 
-	// constepr bool wrapper
-	template <bool val>
-	using cte_bool = integral_constant<bool, val>;
-
 	using atraits = typename std::allocator_traits<Allocator>;
 
 	// ensure correct allocator
@@ -27,9 +23,9 @@ private: // internal statics
 	              "Allocator must use the same type as T");
 
 	// allocator weirdness
-	using pocca = cte_bool<atraits::propagate_on_container_copy_assignment::value>;
-	using pocma = cte_bool<atraits::propagate_on_container_move_assignment::value>;
-	using pocs  = cte_bool<atraits::propagate_on_container_swap::value>;
+	using pocca = std::integral_constant<bool, atraits::propagate_on_container_copy_assignment::value>;
+	using pocma = std::integral_constant<bool, atraits::propagate_on_container_move_assignment::value>;
+	using pocs  = std::integral_constant<bool, atraits::propagate_on_container_swap::value>;
 
 public: // statics
 
@@ -174,17 +170,17 @@ private: // internal methods
 	// tag dispatch
 	// because allocators may be weird
 	// and we need different code because of this
-	void move_assign_mm(ring_buffer& other, cte_bool<true> /* pocma */)
+	void move_assign_mm(ring_buffer& other, std::true_type /* pocma */)
 	{
 		mm = std::move(other.mm);
 	}
 
-	void move_assign_mm(ring_buffer& other, cte_bool<false> /* pocma */)
+	void move_assign_mm(ring_buffer& other, std::false_type /* pocma */)
 	{
 		// do nothing
 	}
 
-	void move_assign(ring_buffer&& other, cte_bool<true> /* pocma */)
+	void move_assign(ring_buffer&& other, std::true_type /* pocma */)
 	{
 		// 1. deallocate
 		memblk.reset();
@@ -202,33 +198,33 @@ private: // internal methods
 		m_end = other.m_end;
 	}
 
-	void move_assign(ring_buffer&& other, cte_bool<false> /* pocma */)
+	void move_assign(ring_buffer&& other, std::false_type /* pocma */)
 	{
 		if(mm == other.mm) {
-			move_assign(other, cte_bool<true>());
+			move_assign(other, std::true_type());
 		} else {
 			this->assign(std::make_move_iterator(other.begin()),
 				     std::make_move_iterator(other.end()));
 		}
 	}
 
-	void copy_assign_mm(const ring_buffer& other, cte_bool<true> /* pocca */)
+	void copy_assign_mm(const ring_buffer& other, std::true_type /* pocca */)
 	{
 		mm = other.mm;
 	}
 
-	void copy_assign_mm(const ring_buffer& other, cte_bool<false> /* pocca */)
+	void copy_assign_mm(const ring_buffer& other, std::false_type /* pocca */)
 	{
 		// do nothing
 	}
 
-	void swap_mm(ring_buffer& other, cte_bool<true> /* pocs */)
+	void swap_mm(ring_buffer& other, std::true_type /* pocs */)
 	{
 		using std::swap;
 		swap(mm, other.mm);
 	}
 
-	void swap_mm(ring_buffer& other, cte_bool<false> /* pocs */)
+	void swap_mm(ring_buffer& other, std::false_type /* pocs */)
 	{
 		// ensure: mm == other.mm
 		// do nothing
@@ -413,18 +409,18 @@ private: // internal methods
 	{
 		using itraits = std::iterator_traits<InputIt>;
 		constexpr bool is_fwd_it = std::is_base_of<std::forward_iterator_tag, typename itraits::iterator_category>::value;
-		return it_insert(pos, first, last, cte_bool<is_fwd_it>());
+		return it_insert(pos, first, last, std::integral_constant<bool, is_fwd_it>());
 	}
 
 	// tag dispatch
 	template <typename InputIt>
-	iterator it_insert(const_iterator pos, InputIt first, InputIt last, cte_bool<true> /* is_fwd_it */)
+	iterator it_insert(const_iterator pos, InputIt first, InputIt last, std::true_type /* is_fwd_it */)
 	{
 		return this->it_insert(pos, first, last, static_cast<size_type>(std::distance(first, last)));
 	}
 
 	template <typename InputIt>
-	iterator it_insert(const_iterator pos, InputIt first, InputIt last, cte_bool<false> /* is_fwd_it */)
+	iterator it_insert(const_iterator pos, InputIt first, InputIt last, std::false_type /* is_fwd_it */)
 	{
 		// safely de-const the pointer
 		// cit => abs_offset => idx_offset => it
